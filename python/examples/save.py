@@ -1,4 +1,5 @@
 import os
+import traceback
 import ydlidar
 import time
 import sys
@@ -6,6 +7,10 @@ from matplotlib.patches import Arc
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
+import logging
+from timeit import default_timer
+
+logging.basicConfig(level=logging.DEBUG)
 
 RMAX = 32.0
 
@@ -31,28 +36,27 @@ laser.setlidaropt(ydlidar.LidarPropSampleRate, 20)
 laser.setlidaropt(ydlidar.LidarPropSingleChannel, False)
 scan = ydlidar.LaserScan()
 
-
-def animate(num):
-
-    r = laser.doProcessSimple(scan)
-    if r:
-        angle = []
-        ran = []
-        intensity = []
-        for point in scan.points:
-            angle.append(point.angle)
-            ran.append(point.range)
-            intensity.append(point.intensity)
-        lidar_polar.clear()
-        lidar_polar.scatter(angle, ran, c=intensity, cmap='hsv', alpha=0.95)
-
-
 ret = laser.initialize()
-if ret:
-    ret = laser.turnOn()
+
+try:
     if ret:
-        ani = animation.FuncAnimation(fig, animate, interval=50)
-        plt.show()
-    laser.turnOff()
-laser.disconnecting()
-plt.close()
+        ret = laser.turnOn()
+        scan = ydlidar.LaserScan()
+        prev = default_timer()
+
+        while ret and ydlidar.os_isOk():
+            r = laser.doProcessSimple(scan)
+            current = default_timer()
+            if r:
+                logging.info(
+                    f"scan received[{scan.stamp} - elapsed={(current - prev):.3f}s] {scan.points.size()} ranges is [{1.0/scan.config.scan_time}] Hz")
+            else:
+                logging.warning("Failed to get Lidar Data.")
+
+            prev = current
+        laser.turnOff()
+except Exception as e:
+    traceback.print_exc()
+finally:
+    print("disconnecting...")
+    laser.disconnecting()
